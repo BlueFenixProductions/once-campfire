@@ -77,6 +77,20 @@ class MessagesController < ApplicationController
     end
 
     def bots_eligible_for_webhook
-      @room.direct? ? @room.users.active_bots : @message.mentionees.active_bots
+      return @room.users.active_bots if @room.direct?
+
+      ids = @message.mentionees.active_bots.ids | plain_text_mentioned_bots.ids
+      User.active_bots.where(id: ids)
+    end
+
+    # Bots @mentioned as PLAIN TEXT ("@name" typed, not picked from the mention
+    # autocomplete). Campfire only treats real mention attachables as mentionees,
+    # so a typed "@bot" would otherwise never wake it. Scoped to bots that are
+    # members of THIS room, matched case-insensitively by name.
+    def plain_text_mentioned_bots
+      handles = @message.plain_text_body.to_s.scan(/@([a-z0-9][a-z0-9_-]*)/i).flatten.map(&:downcase).uniq
+      return User.none if handles.empty?
+
+      @room.users.active_bots.where("LOWER(name) IN (?)", handles)
     end
 end
